@@ -5,8 +5,8 @@ program main
   implicit none
   double precision :: temp_deg, temp_dth
   integer :: temp_th
-!=====================================================���v���O����
-  !�����}�b�v�g�p
+!=====================================================主プログラム
+  !磁場マップ使用
   if (select_tracking == 4) then
     call input_map
 
@@ -14,32 +14,52 @@ program main
     h           = th_h*(pi/180.0)
     particle(6) = (T**2.0 + 2.0*T*m0)**0.5
     pth         = particle(6)
-    !�􉽊w�v�Z�̕���
+    !幾何学計算の分岐
     select case (select_B)
-      case(1) !Sector�^�̊􉽊w�v�Z
+      case(1) !Sector型の幾何学計算
         call cal_geo_sec
-      case(2) !Rectangular�^�̊􉽊w�v�Z
+      case(2) !Rectangular型の幾何学計算
         call cal_geo_rec
-      case(3) !�H����
+      case(3) !工事中
         call cal_geo_rec
-      case(4) !FDF�g���v���b�g
+      case(4) !FDFトリプレット
         call cal_geo_FDF
     end select
-    !�v�Z���@�̕���
+    !計算方法の分岐
     select case (select_tracking)
-      case(1) !�ʏ��g���b�L���O(�����T�u���[�`��)
+      case(1) !通常トラッキング(内部サブルーチン)
         call mysub1
-      case(2) !�����݂Ԃ��v�Z(�����T�u���[�`��)
+      case(2) !しらみつぶし計算(内部サブルーチン)
         call mysub2
-      case(3) !�A�N�Z�v�^���X�v�Z(�����T�u���[�`��)
+      case(3) !アクセプタンス計算(内部サブルーチン)
         call mysub3
-      case(5) !�����̈��v�Z(�����T�u���[�`��)
+      case(5) !安定領域計算(内部サブルーチン)
         call mysub4
     end select
   end if
 contains
-!================================================================================================Rectangular�^�̌v�Z
-  subroutine cal_geo_sec  ! �O���T�u���[�`��
+
+
+!================================================================================================プログラムの概要
+!このプログラムは各磁極形状に対応する幾何学計算を行うモジュールである
+!いくつか種類があり、const_dataのselect_Bの値によってそれぞれ呼び出されるルーチンが変わる。
+!以下に各ルーチンの説明を示す。
+!コメントはsector型のみに書いてある。
+!各ルーチンで使用されているparticle(8)~(10)はそれぞれBr,Bth,Bzに対応している。
+!select_B == 1 : cal_geo_sec
+!  初めに設定するパラメータはthF(1/2セルの曲げ角),beta(1/2セルの見込み角),beF・beD(FとDの見込み角),r0(初期入射位置r[m]),セル数N
+!  VFFAの計算は主にこのルーチンを使用している。
+!select_B == 2 : cal_geo_lec
+!  初めに設定するパラメータはbeta(1/2セルの見込み角),beF(Fの見込み角),r0(初期入射位置r[m]),セル数N,L1・L2(磁極の寸法)
+!  座標系はlectangular磁石中心に中心を持ち、進行方向をy,外側はxとしている(はず)
+!select_B == 3 : cal_geo_FDF
+!  工事中('20/3/16現在)
+!select_B == 4 : cal_geo_semiFDF
+!  何となく作ってみたやつ。少し変わった定義をしていた気がする(足立ログノートNo.2参照)
+!  なんとかしてストレートセクションを確保しようとしたパターン。
+!  全く使われていないし、今後使うことはないだろう。
+!================================================================================================セクター型の計算
+  subroutine cal_geo_sec  ! 外部サブルーチン
     double precision :: beS
     beS = beta - (beF + beD)
     thD = thF - beta
@@ -59,8 +79,8 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-!================================================================================================Rectangular�^�̌v�Z
-  subroutine cal_geo_rec  ! �O���T�u���[�`��
+!================================================================================================Rectangular型の計算
+  subroutine cal_geo_rec  ! 外部サブルーチン
     double precision :: tmp1,tmp2,tmp3
     beF_rec  = beF
     thF_rec  = acos((1.0-(r0/L2 - 1.0/tan(beF_rec))**2.)/(1.0+(r0/L2 - 1.0/tan(beF_rec))**2.))
@@ -84,8 +104,8 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-!================================================================================================FDF�g���v���b�g�^�̌v�Z
-  subroutine cal_geo_FDF  ! �O���T�u���[�`��
+!================================================================================================FDFトリプレット型の計算
+  subroutine cal_geo_FDF  ! 外部サブルーチン
     double precision :: beS
     beta = pi/N
     beS  = beta - (beF + beD)
@@ -103,8 +123,8 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-!================================================================================================FDF�g���v���b�g�^�̌v�Z
-  subroutine cal_geo_semiFDF  ! �O���T�u���[�`��
+!================================================================================================FDFトリプレット型の計算
+  subroutine cal_geo_semiFDF  ! 外部サブルーチン
     double precision :: A,B
     double precision :: L_1,L_2,L_3,L_4
     thD = 2.0*thF - beta
@@ -136,91 +156,94 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-!=====================================================[�T�u���[�`���@:�f�[�^�ۑ��ƋO���v�Z�R�[�h�Ăяo��]=====================================================�ʏ��g���b�L���O
-  subroutine mysub1
-    open(17,file='result_1.csv', status='replace')                                                  !�t�@�C���쐬
-    write (17,*) 't[s]',',','th[deg]',',','r[m]',',','z[m]',',',' &
-                 Pr[MeV/c]',',','Pth[MeV/c]',',','Pz[MeV/c]',',','Br[T]',',','Bth[T]',',','Bz[T]'   !�ۑ��f�[�^�̖��O��������
 
-    temp_dth  = nint(dth/th_h)                                                                      !�ۑ������p�x�̐�����
+
+
+!=====================================================[サブルーチン①:データ保存と軌道計算コード呼び出し]=====================================================通常トラッキング
+  subroutine mysub1
+    open(17,file='result_1.csv', status='replace')                                                  !ファイル作成
+    write (17,*) 't[s]',',','th[deg]',',','r[m]',',','z[m]',',',' &
+                 Pr[MeV/c]',',','Pth[MeV/c]',',','Pz[MeV/c]',',','Br[T]',',','Bth[T]',',','Bz[T]'   !保存データの名前書き込み
+
+    temp_dth  = nint(dth/th_h)                                                                      !保存する角度の整数化
     temp_th   = 0
     print *,"th0_r0_z0=",particle(2),particle(3),particle(4)
 
-    do while (particle(2) < max_deg)                                                                !�C�ӂ̎��񐔉����܂Ōv�Z���郋�[�v
-      temp_deg = nint(particle(2)/th_h)                                                             !�p�x�̐�����
-      if (nint(mod(temp_deg , temp_dth)) == 0) then                                                 !�C�ӂ̊p�x�̐����{�̎���true
+    do while (particle(2) < max_deg)                                                                !任意の周回数回るまで計算するループ
+      temp_deg = nint(particle(2)/th_h)                                                             !角度の整数化
+      if (nint(mod(temp_deg , temp_dth)) == 0) then                                                 !任意の角度の整数倍の時にtrue
         write (17,'(e15.8 , a , e15.8 , a , e15.8 , a , e15.8 , a , e15.8 , a , &
                      e15.8 , a , e15.8 , a , e15.8 , a , e15.8 , a , e15.8)') &
                      particle(1),',',particle(2),',',particle(3),',', &
                      particle(4),',',particle(5),',',particle(6),',', &
-                     particle(7),',',particle(8),',',particle(9),',',particle(10)                   !�f�[�^�𒀎��ۑ�
+                     particle(7),',',particle(8),',',particle(9),',',particle(10)                   !データを逐次保存
         if (temp_th /= nint(particle(2)/360)) then
           print *, nint(particle(2)/360)
           temp_th = nint(particle(2)/360)
         end if
       end if
-      theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                                  !1Cell���ł̊p�x�̍X�V
-      call track                                                                                    !RK���ĂԂ��߂̊O���T�u���[�`�����Ă�
-      particle(2) = particle(2) + th_h                                                              !�p�x�̍X�V
+      theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                                  !1Cell内での角度の更新
+      call track                                                                                    !RKを呼ぶための外部サブルーチンを呼ぶ
+      particle(2) = particle(2) + th_h                                                              !角度の更新
     end do
-    close(17)                                                                                       !�t�@�C��������
+    close(17)                                                                                       !ファイルを閉じる
 
     print *,"th1_r1_z1=",particle(2),particle(3),particle(4)
   end subroutine
-!=====================================================[�T�u���[�`���A:�����݂Ԃ��v���O����]=====================================================�����݂Ԃ��v�Z
+!=====================================================[サブルーチン②:しらみつぶしプログラム]=====================================================しらみつぶし計算
   subroutine mysub2
-    double precision :: temp_r1 = r0 , temp_r2 , ini_r                                              !���̏����̓��ꕨ
-    double precision :: temp_z1 = z0 , temp_z2 , ini_z                                              !���̏����̓��ꕨ
-    double precision :: temp_min = 10000.0                                                          !�������Əo���̍��̓��ꕨ
-    double precision :: temp_deg                                                                    !�p�x�p�̓��ꕨ
-    integer :: i,j,k                                                                                !�����ϐ�
+    double precision :: temp_r1 = r0 , temp_r2 , ini_r                                              !ｒの情報の入れ物
+    double precision :: temp_z1 = z0 , temp_z2 , ini_z                                              !ｚの情報の入れ物
+    double precision :: temp_min = 10000.0                                                          !入り口と出口の差の入れ物
+    double precision :: temp_deg                                                                    !角度用の入れ物
+    integer :: i,j,k                                                                                !整数変数
 
-    do i = 1 , 10                                                                                   !�����_�ȉ�i�܂Ōv�Z���郋�[�v
-      do j = -10 , 10                                                                               !�����ω������邽�߂̃��[�v
-        ini_r = temp_r1 + dble(j)*dk                                                                !���̏����l���X�V
-        do  k = -10 , 10                                                                            !�����ω������邽�߂̃��[�v
-          ini_z = temp_z2 + dble(k)*dk                                                              !���̏����l���X�V
-          particle = (/0.0d0, th0, ini_r, ini_z, 0.0d0, pth, 0.0d0, 0.0d0, 0.0d0, 0.0d0/)           !���q�̏����������X�V
-          do while (particle(2) <= 720.0d0)                                                         !1�������܂Ōv�Z���郋�[�v
-            temp_deg = nint(particle(2)/th_h)                                                       !�p�x�̐�����
-            theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                            !1Cell���ł̊p�x�̍X�V
-            call track                                                                              !RK���ĂԂ��߂̊O���T�u���[�`�����Ă�
-            particle(2) = particle(2) + th_h                                                        !�p�x�̍X�V
+    do i = 1 , 10                                                                                   !小数点以下iまで計算するループ
+      do j = -10 , 10                                                                               !ｒを変化させるためのループ
+        ini_r = temp_r1 + dble(j)*dk                                                                !ｒの初期値を更新
+        do  k = -10 , 10                                                                            !ｚを変化させるためのループ
+          ini_z = temp_z2 + dble(k)*dk                                                              !ｚの初期値を更新
+          particle = (/0.0d0, th0, ini_r, ini_z, 0.0d0, pth, 0.0d0, 0.0d0, 0.0d0, 0.0d0/)           !粒子の初期情報を更新
+          do while (particle(2) <= 720.0d0)                                                         !1周回るまで計算するループ
+            temp_deg = nint(particle(2)/th_h)                                                       !角度の整数化
+            theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                            !1Cell内での角度の更新
+            call track                                                                              !RKを呼ぶための外部サブルーチンを呼ぶ
+            particle(2) = particle(2) + th_h                                                        !角度の更新
           end do
-          if (temp_min > ((ini_r-particle(3))**2. + (ini_z-particle(4))**2.)**0.5 &                 !���荷���������Ȃ�����true
+          if (temp_min > ((ini_r-particle(3))**2. + (ini_z-particle(4))**2.)**0.5 &                 !より差が小さくなった時true
                                                 .and. nint(particle(2)) >= 360) then
-            temp_min = ((ini_r-particle(3))**2. + (ini_z-particle(4))**2.)**0.5                     !���̍X�V
-            temp_r2   = ini_r                                                                       !r�̍X�V(��)
-            temp_z2   = ini_z                                                                       !z�̍X�V(��)
+            temp_min = ((ini_r-particle(3))**2. + (ini_z-particle(4))**2.)**0.5                     !差の更新
+            temp_r2   = ini_r                                                                       !rの更新(仮)
+            temp_z2   = ini_z                                                                       !zの更新(仮)
             write(*,*) th0,ini_r,ini_z
             write(*,*) particle(2),particle(3),particle(4)
             write(*,*) '==============================================',temp_min
           end if
         end do
       end do
-      dk      = dk*0.1                                                                              !���ݕ��̍X�V
-      temp_r1 = temp_r2                                                                             !r�̍X�V(�m��)
-      temp_z1 = temp_z2                                                                             !z�̍X�V(�m��)
+      dk      = dk*0.1                                                                              !刻み幅の更新
+      temp_r1 = temp_r2                                                                             !rの更新(確定)
+      temp_z1 = temp_z2                                                                             !zの更新(確定)
     write(*,*) i,temp_min,'dr,dz=',temp_r1-r0,temp_z1
     end do
   end subroutine
-!=====================================================[�T�u���[�`���B:�����̈�(100turn)�̌v�Z�p]=====================================================�A�N�Z�v�^���X�v�Z
+!=====================================================[サブルーチン③:安定領域(100turn)の計算用]=====================================================アクセプタンス計算
   subroutine mysub3
-    integer :: i,j,count                                                                            !�����ϐ�
-    double precision :: temp_dr,temp_dz                                                             !�p�x�p�̓��ꕨ
+    integer :: i,j,count                                                                            !整数変数
+    double precision :: temp_dr,temp_dz                                                             !角度用の入れ物
     count = 0
     do i = 0 , 30
       temp_dr = dble(i-15)*0.001
       do j = 0, 100
         temp_dz = dble(j-100)*0.001
         !write(*,*) temp_dr,temp_dz
-        particle = (/0.0d0, th0, r0+temp_dr, z0+temp_dz, 0.0d0, pth, 0.0d0, 0.0d0, 0.0d0, 0.0d0/)   !���q�̏����������X�V
+        particle = (/0.0d0, th0, r0+temp_dr, z0+temp_dz, 0.0d0, pth, 0.0d0, 0.0d0, 0.0d0, 0.0d0/)   !粒子の初期情報を更新
         if (count == 0) then
-          do while (particle(2) <= 36000.0d0)                                                       !100�������܂Ōv�Z���郋�[�v
-            temp_deg = nint(particle(2)/th_h)                                                       !�p�x�̐�����
-            theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                            !1Cell���ł̊p�x�̍X�V
-            call track                                                                              !RK���ĂԂ��߂̊O���T�u���[�`�����Ă�
-            particle(2) = particle(2) + th_h                                                        !�p�x�̍X�V
+          do while (particle(2) <= 36000.0d0)                                                       !100周回るまで計算するループ
+            temp_deg = nint(particle(2)/th_h)                                                       !角度の整数化
+            theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                            !1Cell内での角度の更新
+            call track                                                                              !RKを呼ぶための外部サブルーチンを呼ぶ
+            particle(2) = particle(2) + th_h                                                        !角度の更新
           end do
         end if
         if (particle(2) >= 35999.0d0 .and. particle(2) <= 36001.0d0) then
@@ -231,105 +254,108 @@ contains
       count = 0
     end do
   end subroutine
-!=====================================================[�T�u���[�`���C:�����̈�(100turn)�̌v�Z�p]=====================================================m�l-FD���̈����̈�
+!=====================================================[サブルーチン④:安定領域(100turn)の計算用]=====================================================m値-FD比の安定領域
   subroutine mysub4
-    integer :: i,j                                                                            !�����ϐ�
-    double precision :: temp_m,temp_thF                                                             !�p�x�p�̓��ꕨ
-    double precision :: temp_beS,pf                                                             !�p�x�p�̓��ꕨ
+    integer :: i,j                                                                            !整数変数
+    double precision :: temp_m,temp_thF                                                             !角度用の入れ物
+    double precision :: temp_beS,pf                                                             !角度用の入れ物
     write(*,*) 'dr_dz =',dr,dz
     write(*,*) 'm',',','thF',',','FD_ratio'
     do i = 1 , 20
       M = dble(i)*0.5
       do j = 0, 20
         thF = dble(j+20)*pi/180.0
-        !temp_beS = dble(j)*0.225        !�􉽊w�v�Z�̕���
+        !temp_beS = dble(j)*0.225        !幾何学計算の分岐
         !beF = (pi/180.0)*(11.25 - temp_beS)/2.0
         !beD = (pi/180.0)*(11.25 - temp_beS)/2.0
         !pf  = (11.25 - temp_beS)/11.25
-        !�􉽊w�v�Z�̕���
+        !幾何学計算の分岐
         select case (select_B)
-          case(1) !Sector�^�̊􉽊w�v�Z
+          case(1) !Sector型の幾何学計算
             call cal_geo_sec
-          case(2) !Rectangular�^�̊􉽊w�v�Z
+          case(2) !Rectangular型の幾何学計算
             call cal_geo_rec
-          case(3) !�H����
+          case(3) !工事中
             call cal_geo_rec
-          case(4) !FDF�g���v���b�g
+          case(4) !FDFトリプレット
             call cal_geo_FDF
         end select
-        particle = (/0.0d0, th0, r0+dr, z0+dz, 0.0d0, pth, 0.0d0, 0.0d0, 0.0d0, 0.0d0/)   !���q�̏����������X�V
-        do while (particle(2) <= (rev*360.0) .and. check /= 1)                                                       !100�������܂Ōv�Z���郋�[�v
-          temp_deg = nint(particle(2)/th_h)                                                       !�p�x�̐�����
-          theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                            !1Cell���ł̊p�x�̍X�V
-          call track                                                                              !RK���ĂԂ��߂̊O���T�u���[�`�����Ă�
-          particle(2) = particle(2) + th_h                                                        !�p�x�̍X�V
+        particle = (/0.0d0, th0, r0+dr, z0+dz, 0.0d0, pth, 0.0d0, 0.0d0, 0.0d0, 0.0d0/)   !粒子の初期情報を更新
+        do while (particle(2) <= (rev*360.0) .and. check /= 1)                                                       !100周回るまで計算するループ
+          temp_deg = nint(particle(2)/th_h)                                                       !角度の整数化
+          theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                            !1Cell内での角度の更新
+          call track                                                                              !RKを呼ぶための外部サブルーチンを呼ぶ
+          particle(2) = particle(2) + th_h                                                        !角度の更新
         end do
         check = 0
-        if (particle(2) >= (rev*360.0)) then  !100���������ɓ���if���A�������Ƃ������f
+        if (particle(2) >= (rev*360.0)) then  !100周した時に入るif文、安定解という判断
           write(*,'(e15.8 , a , e15.8 , a , e15.8 , a , e15.8)') M,',',thF*180.0/pi,',',BF/BD,',',particle(2)
-        !if (particle(2) >= (rev*360.0 - 1.0) .and. particle(2) <= (rev*360.0 + 1.0)) then  !100���������ɓ���if���A�������Ƃ������f
+        !if (particle(2) >= (rev*360.0 - 1.0) .and. particle(2) <= (rev*360.0 + 1.0)) then  !100周した時に入るif文、安定解という判断
         !  write(*,'(e15.8 , a , e15.8 , a , e15.8)') M,',',thF*180.0/pi,',',BF/BD
         end if
       end do
     end do
   end subroutine
-  !=====================================================[�T�u���[�`���D:�����Q�N�b�^��]=====================================================m�l-FD���̈����̈�
-  subroutine track  ! �O���T�u���[�`��
-        double precision :: kl(6),ks(6),k1(6),k2(6),k3(6),k4(6),k(6)                        !�����Q�N�b�^�p�ϐ�����
-        double precision :: P
-
-        kl = (/particle(1),particle(3),particle(4),particle(5),particle(6),particle(7)/)
-        ks = kl
-
-        P      = (particle(5)**2.0+particle(6)**2.0+particle(7)**2.0)**0.5                  !�^����(Ps�I�Ȋ���)
-        r_beta =    P/(m0**2.0+P**2.0)**0.5
-        if (r_beta >= 1.0) then
-           !print *, r_beta
-           check = 1
-        end if
-        gamma  = 1.0/(1.0-r_beta**2.0)**0.5
-
-        select case (select_B)
-          case(1) !Sector�^�̊􉽊w�v�Z
-            call sub_B_sec
-          case(2) !Rectangular�^�̊􉽊w�v�Z
-            call sub_B_rec
-          case(3) !�H����
-            call cal_geo_rec
-          case(4) !FDF�g���v���b�g
-            call sub_B_FDF
-          case(5) !�o�Ɏ���
-            call sub_dipole
-        end select
 
 
-        k1 = RK(ks) !������
-        ks = kl + 0.5*k1 !�X�V
-        k2 = RK(ks) !������
-        ks = kl + 0.5*k2 !�X�V
-        k3 = RK(ks) !�O����
-        ks = kl + 1.0*k3 !�X�V
-        k4 = RK(ks) !�l����
 
-        k = (k1 + 2.0*k2 + 2.0*k3 + k4)/6.0
-        kl = kl + k
 
-        particle = (/kl(1),particle(2),kl(2),kl(3),kl(4),kl(5),kl(6),particle(8),particle(9),particle(10)/)
-        if (check == 1) then
-          particle(2) = 3600000d0
-          check = 0
-        end if
-    end subroutine
 
-    function RK(ks) result(klf)                                                                       !�O���֐�
-      double precision :: ks(6),klf(6)
-      klf(1) = h*(ks(2)*gamma*m0/ks(5))/c                                                             !t
-      klf(2) = h*(ks(2)*ks(4)/ks(5))                                                                  !r
-      klf(3) = h*(ks(2)*ks(6)/ks(5))                                                                  !z
-      klf(4) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(5)*particle(10) - ks(6)*particle( 9)) + ks(5))           !pr
-      klf(5) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(6)*particle( 8) - ks(4)*particle(10)) - ks(4))           !pth
-      klf(6) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(4)*particle( 9) - ks(5)*particle( 8)))                   !pz
-    end function
-!=====================================================[]=====================================================
 
+  subroutine track  ! 外部サブルーチン
+      double precision :: kl(6),ks(6),k1(6),k2(6),k3(6),k4(6),k(6)                        !ルンゲクッタ用変数入れ
+      double precision :: P
+
+      kl = (/particle(1),particle(3),particle(4),particle(5),particle(6),particle(7)/)
+      ks = kl
+
+      P      = (particle(5)**2.0+particle(6)**2.0+particle(7)**2.0)**0.5                  !運動量(Ps的な感じ)
+      r_beta =    P/(m0**2.0+P**2.0)**0.5
+      if (r_beta >= 1.0) then
+         !print *, r_beta
+         check = 1
+      end if
+      gamma  = 1.0/(1.0-r_beta**2.0)**0.5
+
+      select case (select_B)
+        case(1) !Sector型の幾何学計算
+          call sub_B_sec
+        case(2) !Rectangular型の幾何学計算
+          call sub_B_rec
+        case(3) !工事中
+          call cal_geo_rec
+        case(4) !FDFトリプレット
+          call sub_B_FDF
+        case(5) !双極磁場
+          call sub_dipole
+      end select
+
+
+      k1 = RK(ks) !一回目
+      ks = kl + 0.5*k1 !更新
+      k2 = RK(ks) !二回目
+      ks = kl + 0.5*k2 !更新
+      k3 = RK(ks) !三回目
+      ks = kl + 1.0*k3 !更新
+      k4 = RK(ks) !四回目
+
+      k = (k1 + 2.0*k2 + 2.0*k3 + k4)/6.0
+      kl = kl + k
+
+      particle = (/kl(1),particle(2),kl(2),kl(3),kl(4),kl(5),kl(6),particle(8),particle(9),particle(10)/)
+      if (check == 1) then
+        particle(2) = 3600000d0
+        check = 0
+      end if
+  end subroutine
+
+  function RK(ks) result(klf)                                                                       !外部関数
+    double precision :: ks(6),klf(6)
+    klf(1) = h*(ks(2)*gamma*m0/ks(5))/c                                                             !t
+    klf(2) = h*(ks(2)*ks(4)/ks(5))                                                                  !r
+    klf(3) = h*(ks(2)*ks(6)/ks(5))                                                                  !z
+    klf(4) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(5)*particle(10) - ks(6)*particle( 9)) + ks(5))           !pr
+    klf(5) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(6)*particle( 8) - ks(4)*particle(10)) - ks(4))           !pth
+    klf(6) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(4)*particle( 9) - ks(5)*particle( 8)))                   !pz
+  end function
 end program
