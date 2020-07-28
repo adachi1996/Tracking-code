@@ -1,7 +1,6 @@
 program main
   use const_data
   use map_track
-  use cal_B
   implicit none
   double precision :: temp_deg, temp_dth
   integer :: temp_th
@@ -358,4 +357,328 @@ contains
     klf(5) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(6)*particle( 8) - ks(4)*particle(10)) - ks(4))           !pth
     klf(6) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(4)*particle( 9) - ks(5)*particle( 8)))                   !pz
   end function
+
+
+  !================================================================================================プログラムの概要
+  !このプログラムは理想磁場を計算する際に使用する。このプログラムはtrack_dataから呼び出される。
+  !いくつか種類があり、const_dataのselect_Bの値によってそれぞれ呼び出されるルーチンが変わる。
+  !以下に各ルーチンの説明を示す。基本的にVFFA用に磁場の式は設定されているため、HFFAで使用したい場合は磁場の式を変える必要がある。
+  !コメントはsector型のみに書いてある。
+  !各ルーチンで使用されているparticle(8)~(10)はそれぞれBr,Bth,Bzに対応している。
+  !select_B == 1 : sector
+  !  設計軌道上に存在する座標からみたx,y,z,Bx,By,Bzを幾何学計算から求めている。
+  !  VFFAの計算は主にこのルーチンを使用している。
+  !select_B == 2 : Lectangular
+  !  sectorと同様に幾何学計算から磁極のある範囲を計算し、r,thの値から範囲内外の判定をしている。
+  !  座標系はlectangular磁石中心に中心を持ち、進行方向をy,外側はxとしている(はず)
+  !  漏れ磁場を考慮できていない('20/3/16現在)ため、垂直方向のベータトロン振動の評価には不向き。
+  !  最近はほとんど利用していない。2018年くらいまで使用していた(足立ログノートNo.1のどっかにある)
+  !select_B == 3 : radial sector
+  !  最もシンプルなパターン
+  !  単純にr,thで磁石の範囲内外の判定をしている。
+  !  漏れ磁場を考慮できていない('20/3/16現在)ため、垂直方向のベータトロン振動の評価には不向き。
+  !  最近はほとんど利用していない。2018年くらいまで使用していた(足立ログノートNo.1のどっかにある)
+  !select_B == 4 : FDF triplet
+  !  何となく作ってみたやつ。少し変わった定義をしていた気がする(足立ログノートNo.2参照)
+  !  なんとかしてストレートセクションを確保しようとしたパターン。
+  !  全く使われていないし、今後使うことはないだろう。
+  !================================================================================================セクター型の計算
+    subroutine sub_B_sec  ! 外部サブルーチン
+      double precision :: LF,LD       !各セクター中心からの距離を入れる変数
+      double precision :: temp1,temp2 !幾何学計算用仮入れ物
+      double precision :: faiF,faiD   !セクター中心からの角度を入れる
+      double precision :: r,z,x       !トラッキングパラメータ
+
+      r = particle(3)
+      z = particle(4)
+
+      !rやzがあまりにも設計軌道から外れていた場合は計算をストップしたかったif文
+      !値に科学的な根拠はなく、経験？というか何となくで決めた
+      if (abs(r) > (r0 + 0.1) .or. abs(r) < (r0 - 0.1) .or. abs(z) > (z0 + 0.01 + dz*2.0)) then
+        check = 1
+      end if
+
+      !1セル前半(1/2)の計算
+      if (theta <= beta) then
+        temp1 = r**2.0 - 2.0*r*(r0-roF)*cos(theta)+(r0-roF)**2.0        !F側のセクター中心からの距離を計算
+        LF   = temp1**0.5                                               !temp1の値が知りたかったためあえてこのようにしている
+        faiF = asin((r*sin(theta))/LF)                                  !セクター中心からの角度を計算
+
+        temp2 = r**2.0 - 2.0*r*(r3+roD)*cos(beta - theta)+(r3+roD)**2.0 !F側のセクター中心からの距離を計算(以下同文)
+        LD   = temp2**0.5
+        faiD = asin((r*sin(beta - theta))/LD)
+
+        !数学的におかしな数値になった場合は計算をストップする(temp1やtemp2はここで使用)
+        if (temp1 <= 0.0 .or. (r*sin(theta))/LF        > 1.0 .or. &
+            temp2 <= 0.0 .or. (r*sin(beta - theta))/LD > 1.0) then
+          check = 1
+        end if
+
+        if (faiF <= thF .and. faiD > thD) then !F側の計算
+          x   = LF - roF !設計軌道からのずれ
+          if (abs(M*x) > pi/2.0) then !磁場の定義式の範囲内がどうか判定
+            check = 1
+          end if
+          particle( 8) =  BF*exp(M*z)*sin(M*x)
+          particle( 9) =  0.
+          particle(10) = -BF*exp(M*z)*cos(M*x)
+          !particle( 8) =  BF*M*x
+          !particle( 9) =  0.
+          !particle(10) = -BF*(1.0+M*z)
+        else if (faiD <= thD .and. faiF > thF) then !D側の計算
+          x   = roD - LD !設計軌道からのずれ
+          if (abs(M*x) > pi/2.0) then !磁場の定義式の範囲内がどうか判定
+            check = 1
+          end if
+          particle( 8) = -BD*exp(M*z)*sin(M*x)
+          particle( 9) =  0.
+          particle(10) =  BD*exp(M*z)*cos(M*x)
+          !particle( 8) = -BD*M*x
+          !particle( 9) =  0.
+          !particle(10) =  BD*(1.0+M*z)
+        else
+          particle( 8) =  0.0
+          particle( 9) =  0.0
+          particle(10) =  0.0
+        end if
+
+      else !残り(1/2セル)を計算
+        temp1 = r**2.0 - 2.0*r*(r3+roD)*cos(theta - beta)+(r3+roD)**2.0
+        LD   = temp1**0.5
+        faiD = asin((r*sin(theta - beta))/LD)
+
+        temp2 = r**2.0 - 2.0*r*(r0-roF)*cos(2.0*beta - theta)+(r0-roF)**2.0
+        LF   = temp2**0.5
+        faiF = asin((r*sin(2.0*beta - theta))/LF)
+
+        if (temp1 <= 0.0 .or. (r*sin(theta - beta))/LD     > 1.0 .or. &
+            temp2 <= 0.0 .or. (r*sin(2.0*beta - theta))/LF > 1.0) then
+          check = 1
+        end if
+
+        if (faiD <= thD .and. faiF > thF) then
+          x   =  roD - LD
+          if (abs(M*x) > pi/2.0) then
+            check = 1
+          end if
+          particle( 8) = -BD*exp(M*z)*sin(M*x)
+          particle( 9) =  0.
+          particle(10) =  BD*exp(M*z)*cos(M*x)
+          !particle( 8) = -BD*M*x
+          !particle( 9) =  0.
+          !particle(10) =  BD*(1.0+M*z)
+
+        else if (faiF <= thF .and. faiD > thD) then
+          x   =  LF - roF
+          if (abs(M*x) > pi/2.0) then
+            check = 1
+          end if
+          particle( 8) =  BF*exp(M*z)*sin(M*x)
+          particle( 9) =  0.
+          particle(10) = -BF*exp(M*z)*cos(M*x)
+          !particle( 8) =  BF*M*x
+          !particle( 9) =  0.
+          !particle(10) = -BF*(1.0+M*z)
+        else
+          particle( 8) =  0.0
+          particle( 9) =  0.0
+          particle(10) =  0.0
+        end if
+      end if
+    end subroutine
+  !================================================================================================Rectangular型の計算
+    subroutine sub_B_rec  ! 外部サブルーチン
+      double precision :: LF,LD,x,B
+      !print *, theta*180.0/pi,beta*180.0/pi,RF,RD
+      if (theta <= beta) then
+        LF = particle(3)*sin(theta)
+        LD = particle(3)*sin(beta - theta)
+        if (LF <= L2 .and. LD <=L2) then
+          particle(10) = 1000.0d0
+        else if (LF <= L2) then
+          x = particle(3)*cos(theta) - RF
+          B = BF*exp(M*particle(4))*sin(M*x)
+          particle( 8) =  B*cos(theta)
+          particle( 9) = -B*sin(theta)
+          particle(10) = -BF*exp(M*particle(4))*cos(M*x)
+        else if (LD <= L2) then
+          x = particle(3)*cos(beta-theta) - RD
+          B = -BD*exp(M*particle(4))*sin(M*x)
+          particle( 8) =  B*cos(beta-theta)
+          particle( 9) =  B*sin(beta-theta)
+          particle(10) =  BD*exp(M*particle(4))*cos(M*x)
+        else
+          particle( 8) = 0.0d0
+          particle( 9) = 0.0d0
+          particle(10) = 0.0d0
+        end if
+      else
+        LD = particle(3)*sin(theta-beta)
+        LF = particle(3)*sin(2.*beta-theta)
+        if (LF <= L2 .and. LD <=L2) then
+          particle(10) = 1000.0d0
+          return
+        else if (LD <= L2) then
+          x = particle(3)*cos(theta-beta) - RD
+          B = -BD*exp(M*particle(4))*sin(M*x)
+          particle( 8) =  B*cos(theta-beta)
+          particle( 9) = -B*sin(theta-beta)
+          particle(10) =  BD*exp(M*particle(4))*cos(M*x)
+        else if (LF <= L2) then
+          x = particle(3)*cos(2.*beta-theta) - RF
+          B = BF*exp(M*particle(4))*sin(M*x)
+          particle( 8) =  B*cos(2.*beta-theta)
+          particle( 9) = -B*sin(2.*beta-theta)
+          particle(10) = -BF*exp(M*particle(4))*cos(M*x)
+        else
+          particle( 8) = 0.0d0
+          particle( 9) = 0.0d0
+          particle(10) = 0.0d0
+        end if
+      end if
+    end subroutine
+  !================================================================================================FDFトリプレット型の計算
+    subroutine sub_B_FDF  ! 外部サブルーチン
+      double precision :: LF,LD,x,faiF,faiD,fai
+      double precision :: r,z
+
+      r = particle(3)
+      z = particle(4)
+
+      if (theta <= beta) then!1/2セルの前半
+        LD   = (r**2.0 - 2.0*r*(r0+roD)*cos(theta)+(r0+roD)**2.0)**0.5
+        faiD = asin(r*sin(theta)/LD)
+        LF   = (r**2.0 - 2.0*r*(Ldr*sin(beta-theta)-(roF-r3)*cos(beta-theta))+Ldr**2.0+(roF-r3)**2.0)**0.5
+        faiF = asin((r*sin(beta-theta)-Ldr)/LF)
+        if (faiD <= thD .and. faiD >= 0.0) then!D磁石
+          x   = roD - LD
+          fai = M*x
+          if (abs(fai) > 90.0*pi/180.0) then
+            check = 1
+          end if
+          particle( 8) = -BD*exp(M*particle(4))*sin(fai)
+          particle( 9) =  0.0
+          particle(10) =  BD*exp(M*particle(4))*cos(fai)
+
+        else if (faiF <= thF .and. r*sin(beta-theta) >= Ldr) then!F磁石
+          x   = LF - roF
+          fai = M*x
+          if (abs(fai) > 90.0*pi/180.0) then
+            check = 1
+          end if
+          particle( 8) =  BF*exp(M*particle(4))*sin(fai)
+          particle( 9) =  0.0
+          particle(10) = -BF*exp(M*particle(4))*cos(fai)
+
+        else !ストレートセクション
+          particle( 8) =  0.0
+          particle( 9) =  0.0
+          particle(10) =  0.0
+        end if
+      end if
+
+      if (theta > beta) then!1/2セルの後半
+        LF   = (r**2.0 - 2.0*r*(Ldr*sin(theta-beta)-(roF-r3)*cos(theta-beta))+Ldr**2.0+(roF-r3)**2.0)**0.5
+        faiF = asin((r*sin(theta-beta)-Ldr)/LF)
+        LD   = (r**2.0 - 2.0*r*(r0+roD)*cos(2.0*beta-theta)+(r0+roD)**2.0)**0.5
+        faiD = asin(r*sin(2.0*beta-theta)/LD)
+        if (faiF <= thF .and. r*sin(theta-beta) >= Ldr) then!D磁石
+          x   =  LF - roF
+          fai =  M*x
+          if (abs(fai) > 90.0*pi/180.0) then
+            check = 1
+          end if
+          particle( 8) =  BF*exp(M*particle(4))*sin(fai)
+          particle( 9) =  0.0
+          particle(10) = -BF*exp(M*particle(4))*cos(fai)
+        else if (faiD <= thD .and. faiD >= 0.0) then !F磁石
+          x   =  roD - LD
+          fai =  M*x
+          if (abs(fai) > 90.0*pi/180.0) then
+            check = 1
+          end if
+          particle( 8) = -BD*exp(M*particle(4))*sin(fai)
+          particle( 9) =  0.0
+          particle(10) =  BD*exp(M*particle(4))*cos(fai)
+        else !ストレートセクション
+          particle( 8) =  0.0
+          particle( 9) =  0.0
+          particle(10) =  0.0
+        end if
+      end if
+    end subroutine
+  !================================================================================================FDFトリプレット型の計算
+    subroutine sub_B_semiFDF  ! 外部サブルーチン
+      double precision :: LD,LF,x,B
+      double precision :: faiF,faiD,fai1
+      double precision :: r,z
+
+      r = particle(3)
+      z = particle(4)
+
+      if (theta <= beta) then !1Cellの半分
+        LD   = (r**2.0 - 2.0*(roD+r0)*r*cos(theta) + (roD+r0)**2.0)**0.5
+        faiD = asin(r*sin(theta)/LD)
+
+        LF   = ((r*sin(beta - theta)-Ldr)**2.0 + (r*cos(beta - theta)-(Lpp-roF)-Lppp*cos(beta))**2.0)**0.5
+        faiF = asin((r*sin(beta - theta)-Ldr)/LF)
+
+        if (faiD >= 0.0 .and. faiD < thD) then
+          x = roD - LD
+          if (abs(M*x) > pi/2.0) then
+            check = 1
+          end if
+          particle( 8) = -BD*exp(M*z)*sin(M*x)
+          particle( 9) =  0.0
+          particle(10) =  BD*exp(M*z)*cos(M*x)
+        else if (faiF > 0.0 .and. faiF <= 2.0*thF) then
+          x = LF - roF
+          if (abs(M*x) > pi/2.0) then
+            check = 1
+          end if
+          particle( 8) =  BF*exp(M*z)*sin(M*x)
+          particle( 9) =  0.0
+          particle(10) = -BF*exp(M*z)*cos(M*x)
+        else
+          particle( 8) =  0.0
+          particle( 9) =  0.0
+          particle(10) =  0.0
+        end if
+      else
+        LF   = ((r*sin(theta-beta)-Ldr)**2.0 + (r*cos(theta-beta)-(Lpp-roF)-Lppp*cos(beta))**2.0)**0.5
+        faiF = asin((r*sin(theta-beta)-Ldr)/LF)
+
+        LD   = (r**2.0 - 2.0*(roD+r0)*r*cos(2.0*beta - theta) + (roD+r0)**2.0)**0.5
+        faiD = asin(r*sin(2.0*beta - theta)/LD)
+
+        if (faiF > 0.0 .and. faiF <= 2.0*thF) then
+          x = LF - roF
+          if (abs(M*x) > pi/2.0) then
+            check = 1
+          end if
+          particle( 8) =  BF*exp(M*z)*sin(M*x)
+          particle( 9) =  0.0
+          particle(10) = -BF*exp(M*z)*cos(M*x)
+        else if (faiD >= 0.0 .and. faiD < thD) then
+          x = roD - LD
+          if (abs(M*x) > pi/2.0) then
+            check = 1
+          end if
+          particle( 8) = -BD*exp(M*z)*sin(M*x)
+          particle( 9) =  0.0
+          particle(10) =  BD*exp(M*z)*cos(M*x)
+        else
+          particle( 8) =  0.0
+          particle( 9) =  0.0
+          particle(10) =  0.0
+        end if
+      end if
+      !print *,theta*180.0/pi,faiD*180.0/pi,faiF*180.0/pi,r
+    end subroutine
+
+    subroutine sub_dipole  ! 外部サブルーチン
+      particle( 8) =  0.0
+      particle( 9) =  0.0
+      particle(10) = -6.67128d-05
+    end subroutine
 end program
