@@ -39,6 +39,7 @@ program main
 contains
 
 
+!=====================================================[プログラム①:幾何学計算]=====================================================
 !================================================================================================プログラムの概要
 !このプログラムは各磁極形状に対応する幾何学計算を行うモジュールである
 !いくつか種類があり、const_dataのselect_Bの値によってそれぞれ呼び出されるルーチンが変わる。
@@ -57,7 +58,7 @@ contains
 !  何となく作ってみたやつ。少し変わった定義をしていた気がする(足立ログノートNo.2参照)
 !  なんとかしてストレートセクションを確保しようとしたパターン。
 !  全く使われていないし、今後使うことはないだろう。
-!================================================================================================セクター型の計算
+!=====================================================[サブルーチン①:Sector型]=====================================================
   subroutine cal_geo_sec  ! 外部サブルーチン
     double precision :: beS
     beS = beta - (beF + beD)
@@ -78,7 +79,7 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-!================================================================================================Rectangular型の計算
+!=====================================================[サブルーチン②:Lectanguler型]=====================================================
   subroutine cal_geo_rec  ! 外部サブルーチン
     double precision :: tmp1,tmp2,tmp3
     beF_rec  = beF
@@ -103,7 +104,7 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-!================================================================================================FDFトリプレット型の計算
+!=====================================================[サブルーチン③:.FDFトリプレット型]=====================================================
   subroutine cal_geo_FDF  ! 外部サブルーチン
     double precision :: beS
     beta = pi/N
@@ -122,7 +123,7 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-!================================================================================================FDFトリプレット型の計算
+!=====================================================[サブルーチン④:エセFDFトリプレット型]=====================================================
   subroutine cal_geo_semiFDF  ! 外部サブルーチン
     double precision :: A,B
     double precision :: L_1,L_2,L_3,L_4
@@ -155,40 +156,78 @@ contains
       write(*,*) r0,r1,r2,r3
     end if
   end subroutine
-
-
-
+!=====================================================[プログラム②:軌道計算]=====================================================
+!================================================================================================プログラムの概要
+!
 !=====================================================[サブルーチン①:データ保存と軌道計算コード呼び出し]=====================================================通常トラッキング
-  subroutine mysub1
-    open(17,file='result_1.csv', status='replace')                                                  !ファイル作成
-    write (17,*) 't[s]',',','th[deg]',',','r[m]',',','z[m]',',',' &
-                 Pr[MeV/c]',',','Pth[MeV/c]',',','Pz[MeV/c]',',','Br[T]',',','Bth[T]',',','Bz[T]'   !保存データの名前書き込み
+subroutine mysub1
+  integer :: count_th,count_dth,count_one_cell
+  double precision :: deruta_P , deruta_Pr, deruta_Pth , RF_T, RF_P, RF_th!加速関係
+  open(17,file=save_name, status='replace')                                                  !ファイル作成
+  write (17,*) 't[s]',',','th[deg]',',','r[m]',',','z[m]',',',' &
+               Pr[MeV/c]',',','Pth[MeV/c]',',','Pz[MeV/c]',',','Br[T]',',','Bth[T]',',','Bz[T]'   !保存データの名前書き込み
 
-    temp_dth  = nint(dth/th_h)                                                                      !保存する角度の整数化
-    temp_th   = 0
-    print *,"th0_r0_z0=",particle(2),particle(3),particle(4)
 
-    do while (particle(2) < max_deg)                                                                !任意の周回数回るまで計算するループ
-      temp_deg = nint(particle(2)/th_h)                                                             !角度の整数化
-      if (nint(mod(temp_deg , temp_dth)) == 0) then                                                 !任意の角度の整数倍の時にtrue
-        write (17,'(e15.8 , a , e15.8 , a , e15.8 , a , e15.8 , a , e15.8 , a , &
-                     e15.8 , a , e15.8 , a , e15.8 , a , e15.8 , a , e15.8)') &
-                     particle(1),',',particle(2),',',particle(3),',', &
-                     particle(4),',',particle(5),',',particle(6),',', &
-                     particle(7),',',particle(8),',',particle(9),',',particle(10)                   !データを逐次保存
-        if (temp_th /= nint(particle(2)/360)) then
-          print *, nint(particle(2)/360)
-          temp_th = nint(particle(2)/360)
-        end if
+  RF_T = T
+
+  temp_dth  = nint(dth/th_h)                                                                      !保存する角度の整数化
+  temp_th   = 0
+  count_th  = 0
+  count_dth = nint(dth/th_h)
+  count_one_cell = nint((beta*2.0*180.0/pi)/th_h)
+  print *, "One cell -> ",count_one_cell
+  print *, "th0_r0_z0=",particle(2),particle(3),particle(4)
+
+  do while (particle(2) < max_deg)                                                                !任意の周回数回るまで計算するループ
+    !temp_deg = nint(particle(2)/th_h)                                                             !角度の整数化
+    !if (nint(mod(temp_deg , temp_dth)) == 0) then                                                 !任意の角度の整数倍の時にtrue
+    if (mod(count_th , count_dth) == 0) then
+      write (17,'(e16.8 , a , e16.8 , a , e16.8 , a , e16.8 , a , e16.8 , a , &
+                   e16.8 , a , e16.8 , a , e16.8 , a , e16.8 , a , e16.8)') &
+                   particle(1),',',particle(2),',',particle(3),',', &
+                   particle(4),',',particle(5),',',particle(6),',', &
+                   particle(7),',',particle(8),',',particle(9),',',particle(10)                   !データを逐次保存
+      if (temp_th /= nint(particle(2)/360.0)) then
+        print *, nint(particle(2)/360.0)
+        temp_th = nint(particle(2)/360.0)
       end if
-      theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0                                  !1Cell内での角度の更新
-      call track                                                                                    !RKを呼ぶための外部サブルーチンを呼ぶ
-      particle(2) = particle(2) + th_h                                                              !角度の更新
-    end do
-    close(17)                                                                                       !ファイルを閉じる
+    end if
+    theta = mod(count_th,count_one_cell)*th_h*pi/180.0d0
+    !theta = mod(temp_deg,(beta*2.0*180.0/pi)/th_h)*th_h*pi/180.0
 
-    print *,"th1_r1_z1=",particle(2),particle(3),particle(4)
-  end subroutine
+
+    !加速関連
+    if (mod(count_th,nint(360/m_th_h))*m_th_h == th_RF) then
+      print '(a,e16.8,e16.8,e16.8,e16.8)','P(n)   -> ',particle(5),particle(6),particle(7),&
+                                                      (particle(5)**2.0 + particle(6)**2.0 + particle(7)**2.0)**0.5
+      print '(a,e16.4)','T(n)   -> ',RF_T
+
+      RF_P = (RF_T**2.0 + 2.0*RF_T*m0  -  particle(7)**2.0)**0.5 !加速前の平面上の運動量(スカラ)
+      RF_th = ATAN(particle(6)/(-particle(5))) !RF_Pの角度
+      print '(a,e16.4)','th_1   ->',ATAN(particle(6)/(-particle(5)))*180/pi
+      RF_T =  RF_T + RF_kV*1d-3
+      pth  = (RF_T**2.0 + 2.0*RF_T*m0  -  particle(7)**2.0)**0.5 !加速後の平面上の運動量(スカラ)
+      deruta_Pr   = -(pth - RF_P)*cos(RF_th)
+      deruta_Pth  =  (pth - RF_P)*sin(RF_th)
+      particle(5) = -RF_P*cos(RF_th) + deruta_Pr
+      particle(6) =  RF_P*sin(RF_th) + deruta_Pth
+      print '(a,e16.4)','th_2   ->',ATAN(particle(6)/(-particle(5)))*180/pi
+
+      print '(a,e16.8,e16.8,e16.8,e16.8)','P(n+1) -> ',particle(5),particle(6),particle(7),&
+                                                      (particle(5)**2.0 + particle(6)**2.0 + particle(7)**2.0)**0.5
+      print '(a,e16.4)','T(n+1) -> ', -m0+(m0**2.0+particle(5)**2.0 + particle(6)**2.0 + particle(7)**2.0)**0.5
+      print *,'------------------------------------------------------'
+    end if
+
+
+    call track
+    count_th = count_th + 1                                                                                    !RKを呼ぶための外部サブルーチンを呼ぶ
+    particle(2) = particle(2) + th_h                                                              !角度の更新
+  end do
+  close(17)                                                                                       !ファイルを閉じる
+
+  print *,"th1_r1_z1=",particle(2),particle(3),particle(4)
+end subroutine
 !=====================================================[サブルーチン②:しらみつぶしプログラム]=====================================================しらみつぶし計算
   subroutine mysub2
     double precision :: temp_r1 = r0 , temp_r2 , ini_r                                              !ｒの情報の入れ物
@@ -295,12 +334,7 @@ contains
       end do
     end do
   end subroutine
-
-
-
-
-
-
+!=====================================================[サブルーチン⑤:4次のルンゲクッタ]=====================================================
   subroutine track  ! 外部サブルーチン
       double precision :: kl(6),ks(6),k1(6),k2(6),k3(6),k4(6),k(6)                        !ルンゲクッタ用変数入れ
       double precision :: P
@@ -347,7 +381,7 @@ contains
         check = 0
       end if
   end subroutine
-
+!=====================================================[サブルーチン⑥:円筒座標の運動方程式]=====================================================
   function RK(ks) result(klf)                                                                       !外部関数
     double precision :: ks(6),klf(6)
     klf(1) = h*(ks(2)*gamma*m0/ks(5))/c                                                             !t
@@ -357,8 +391,7 @@ contains
     klf(5) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(6)*particle( 8) - ks(4)*particle(10)) - ks(4))           !pth
     klf(6) = h*((1.0d-6*c*ks(2)/ks(5))*(ks(4)*particle( 9) - ks(5)*particle( 8)))                   !pz
   end function
-
-
+!=====================================================[プログラム③:理想磁場計算部]=====================================================
   !================================================================================================プログラムの概要
   !このプログラムは理想磁場を計算する際に使用する。このプログラムはtrack_dataから呼び出される。
   !いくつか種類があり、const_dataのselect_Bの値によってそれぞれ呼び出されるルーチンが変わる。
@@ -382,7 +415,7 @@ contains
   !  何となく作ってみたやつ。少し変わった定義をしていた気がする(足立ログノートNo.2参照)
   !  なんとかしてストレートセクションを確保しようとしたパターン。
   !  全く使われていないし、今後使うことはないだろう。
-  !================================================================================================セクター型の計算
+!=====================================================[サブルーチン①:Sector型]=====================================================
     subroutine sub_B_sec  ! 外部サブルーチン
       double precision :: LF,LD       !各セクター中心からの距離を入れる変数
       double precision :: temp1,temp2 !幾何学計算用仮入れ物
@@ -486,7 +519,7 @@ contains
         end if
       end if
     end subroutine
-  !================================================================================================Rectangular型の計算
+  !=====================================================[サブルーチン②:Rectanguler型]=====================================================
     subroutine sub_B_rec  ! 外部サブルーチン
       double precision :: LF,LD,x,B
       !print *, theta*180.0/pi,beta*180.0/pi,RF,RD
@@ -537,7 +570,7 @@ contains
         end if
       end if
     end subroutine
-  !================================================================================================FDFトリプレット型の計算
+  !=====================================================[サブルーチン③:FDFトリプレット型]=====================================================
     subroutine sub_B_FDF  ! 外部サブルーチン
       double precision :: LF,LD,x,faiF,faiD,fai
       double precision :: r,z
@@ -607,7 +640,7 @@ contains
         end if
       end if
     end subroutine
-  !================================================================================================FDFトリプレット型の計算
+  !=====================================================[サブルーチン④:エセFDFトリプレット型]=====================================================
     subroutine sub_B_semiFDF  ! 外部サブルーチン
       double precision :: LD,LF,x,B
       double precision :: faiF,faiD,fai1
@@ -675,7 +708,7 @@ contains
       end if
       !print *,theta*180.0/pi,faiD*180.0/pi,faiF*180.0/pi,r
     end subroutine
-
+  !=====================================================[サブルーチン⑤単純なダイポール:]=====================================================
     subroutine sub_dipole  ! 外部サブルーチン
       particle( 8) =  0.0
       particle( 9) =  0.0
